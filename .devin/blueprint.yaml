@@ -1,0 +1,32 @@
+# https://docs.devin.ai/onboard-devin/environment-yaml
+# App TypeScript + Vite (MapLibre) — Node 22 requis, non préinstallé sur la VM.
+initialize:
+  - name: install node 22
+    run: |
+      if [ ! -x "$HOME/.local/node/bin/node" ]; then
+        mkdir -p "$HOME/.local/node"
+        curl -fsSL https://nodejs.org/dist/v22.12.0/node-v22.12.0-linux-x64.tar.xz | tar -xJ --strip-components=1 -C "$HOME/.local/node"
+      fi
+      echo "PATH=$HOME/.local/node/bin:$PATH" >> "$ENVRC"
+  - name: write .env from secret if present
+    run: |
+      if [ -n "$VITE_PRIM_API_KEY" ]; then
+        printf 'VITE_PRIM_API_KEY=%s\n' "$VITE_PRIM_API_KEY" > .env
+      else
+        cp .env.example .env
+      fi
+# Install project dependencies (runs during builds, surfaced to agent at session start).
+maintenance: |
+  export PATH="$HOME/.local/node/bin:$PATH"
+  npm install
+# Reference info for agent
+knowledge:
+  - name: build
+    contents: |
+      export PATH="$HOME/.local/node/bin:$PATH" && npm run build
+  - name: dev
+    contents: |
+      export PATH="$HOME/.local/node/bin:$PATH" && npm run dev -- --host 0.0.0.0
+  - name: secrets
+    contents: |
+      VITE_PRIM_API_KEY (clé PRIM IDFM) attendue dans .env — jamais commitée.
