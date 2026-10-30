@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b0f14" />
+    <title>Plus Court — Paris</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+    <link rel="icon" type="image/png" href="./icons/icon-192.png" />
+  </head>
+  <body>
+    <div id="map"></div>
+
+    <header id="search-panel">
+      <div class="field" id="field-from">
+        <span class="dot dot-from"></span>
+        <input id="input-from" type="text" placeholder="Départ" autocomplete="off" enterkeyhint="search" />
+        <button id="btn-gps" title="Ma position" aria-label="Ma position">&#8982;</button>
+      </div>
+      <button id="btn-swap" title="Inverser" aria-label="Inverser">&#8645;</button>
+      <div class="field" id="field-to">
+        <span class="dot dot-to"></span>
+        <input id="input-to" type="text" placeholder="Arrivée" autocomplete="off" enterkeyhint="search" />
+      </div>
+      <ul id="suggestions" class="hidden"></ul>
+      <div id="weather-chip" class="hidden"></div>
+    </header>
+
+    <div id="loading" class="hidden"><div class="spinner"></div>Calcul des trajets…</div>
+
+    <section id="results" class="hidden">
+      <div id="results-list"></div>
+    </section>
+
+    <section id="detail" class="hidden">
+      <button id="btn-back">&#8249; Retour</button>
+      <div id="detail-content"></div>
+    </section>
+
+    <script type="module" src="/src/main.ts"></script>
+    <script>
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("./sw.js").catch(() => {});
+      }
+    </script>
+  </body>
+</html>
