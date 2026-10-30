@@ -86,7 +86,8 @@ async function personalBikeOption(from: LatLon, to: LatLon): Promise<TripOption 
 
   const walkBack = park ? await route(bikeDest, to, "pedestrian").catch(() => null) : null;
   const parkDist = park ? dist(bikeDest, to) : null;
-  const walkTime = walkBack?.duration ?? (parkDist != null ? parkDist / 1.33 : 90);
+  // Sans parking trouvé le vélo arrive directement à destination : pas de marche finale.
+  const walkTime = park ? (walkBack?.duration ?? (parkDist ?? 0) / 1.33) : 0;
 
   const parkingInfo = parkingFailed
     ? "Stationnement vélo indisponible"
@@ -107,7 +108,12 @@ async function personalBikeOption(from: LatLon, to: LatLon): Promise<TripOption 
   const segments: RouteSegment[] = [{ coords: r.coords, color: COLORS.bike }];
   if (park) {
     steps.push({ icon: "🚶", label: "Marcher jusqu'à l'arrivée", duration: walkTime });
-    if (walkBack?.coords.length) segments.push({ coords: walkBack.coords, color: COLORS.walk, dash: true });
+    // Si l'itinéraire piéton échoue, on trace au moins la ligne parking→arrivée
+    // pour que le marqueur d'arrivée reste sur la destination.
+    const walkCoords: [number, number][] = walkBack?.coords.length
+      ? walkBack.coords
+      : [[bikeDest.lon, bikeDest.lat], [to.lon, to.lat]];
+    segments.push({ coords: walkCoords, color: COLORS.walk, dash: true });
   }
   return {
     id: "bike",

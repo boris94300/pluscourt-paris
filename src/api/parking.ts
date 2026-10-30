@@ -41,7 +41,7 @@ out center tags;`;
       lon,
       capacity: parseInt(t.capacity) || 0,
       covered: t.covered === "yes",
-      secured: t.supervised === "yes" || t.surveillance === "yes" || t.fee === "yes" || kind === "parking",
+      secured: t.supervised === "yes" || t.surveillance === "yes" || t.fee === "yes",
       fee: t.fee === "yes",
       kind,
     });
