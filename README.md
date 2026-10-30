@@ -43,3 +43,20 @@ La clé n'est jamais commitée (`.env` est gitignoré).
 
 - La batterie par vélo n'est pas publiée dans les données publiques → on évite
   les stations à moins de 2 vélos (souvent des vélos en panne).
+
+## Déploiement (GitHub Pages)
+
+Le site est statique : `dist/` buildé est poussé sur la branche `gh-pages`,
+que GitHub Pages publie (Settings → Pages → Deploy from a branch → `gh-pages` / `/`).
+
+Redéployer après une modif :
+
+```bash
+npm run build
+git checkout gh-pages && git rm -rf . && cp -r dist/* . && git add -A
+git commit -m "deploy" && git push origin gh-pages && git checkout -
+```
+
+Pour un déploiement automatique à chaque push sur `main`, ajouter un workflow
+Actions `deploy-pages` + le secret `VITE_PRIM_API_KEY` dans le repo, et passer
+Settings → Pages → Source = "GitHub Actions".
