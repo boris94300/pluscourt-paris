@@ -34,8 +34,8 @@ map.on("load", () => {
     type: "raster-dem",
     tiles: ["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],
     encoding: "terrarium",
-    tileSize: 256,
-    maxzoom: 15,
+    tileSize: 512,
+    maxzoom: 14,
   });
   map.setTerrain({ source: "terrain", exaggeration: 3 });
 
@@ -181,10 +181,13 @@ function renderSuggestions(places: Place[]) {
     kind.className = "kind";
     kind.textContent = p.kind;
     li.append(name, kind);
+    // pointerdown garde le focus sur l'input ; click en secours si
+    // pointerdown n'est pas émis (certains navigateurs mobiles).
     li.addEventListener("pointerdown", (e) => {
       e.preventDefault();
       pickPlace(p);
     });
+    li.addEventListener("click", () => pickPlace(p));
     suggestionsEl.appendChild(li);
   }
   suggestionsEl.classList.remove("hidden");
@@ -239,6 +242,44 @@ document.getElementById("btn-swap")!.addEventListener("click", () => {
   maybeCompare();
 });
 
+/* --- Choix d'un point directement sur la carte --- */
+
+const pickHint = document.getElementById("pick-hint") as HTMLElement;
+let pickMode: "from" | "to" | null = null;
+
+function armPickMode(field: "from" | "to") {
+  pickMode = pickMode === field ? null : field;
+  pickHint.classList.toggle("hidden", pickMode === null);
+  map.getCanvas().style.cursor = pickMode ? "crosshair" : "";
+  if (pickMode) {
+    suggestionsEl.classList.add("hidden");
+    (document.activeElement as HTMLElement | null)?.blur();
+  }
+}
+
+document.getElementById("btn-pin-from")!.addEventListener("click", () => armPickMode("from"));
+document.getElementById("btn-pin-to")!.addEventListener("click", () => armPickMode("to"));
+
+map.on("click", (e) => {
+  if (!pickMode) return;
+  const coord = { lat: e.lngLat.lat, lon: e.lngLat.lng };
+  const p: Place = {
+    id: `map_${coord.lat.toFixed(5)}_${coord.lon.toFixed(5)}`,
+    name: `${coord.lat.toFixed(4)}, ${coord.lon.toFixed(4)}`,
+    kind: "Carte",
+    coord,
+  };
+  if (pickMode === "from") {
+    fromPlace = p;
+    inputFrom.value = `📍 ${p.name}`;
+  } else {
+    toPlace = p;
+    inputTo.value = `📍 ${p.name}`;
+  }
+  armPickMode(pickMode); // désarme
+  maybeCompare();
+});
+
 document.getElementById("btn-gps")!.addEventListener("click", () => {
   activeField = "from";
   navigator.geolocation.getCurrentPosition(
@@ -265,17 +306,30 @@ getWeather(PARIS).then((w) => {
 /* ---------------- Comparaison ---------------- */
 
 let comparing = false;
+let userPicked = false; // l'utilisateur a choisi une carte → ne plus auto-sélectionner
+
 async function maybeCompare() {
   if (!fromPlace || !toPlace || comparing) return;
   comparing = true;
+  userPicked = false;
   loadingEl.classList.remove("hidden");
-  resultsEl.classList.add("hidden");
   detailEl.classList.add("hidden");
+  const from = fromPlace.coord;
+  const to = toPlace.coord;
+  let routed = false;
   try {
-    const { options, errors } = await compare(fromPlace.coord, toPlace.coord);
+    const { options, errors } = await compare(from, to, (partial) => {
+      currentOptions = partial;
+      renderResults();
+      // Trace + détail dès le premier résultat (le plus rapide connu à cet instant)
+      if (!routed && partial.length) {
+        routed = true;
+        selectOption(partial[0]!, true);
+      }
+    });
     currentOptions = options;
     renderResults(errors);
-    if (options.length) {
+    if (options.length && !userPicked) {
       selectOption(options[0]!, true);
     }
   } catch (e) {
@@ -320,7 +374,10 @@ function renderResults(errors: string[] = []) {
       <div class="option-detail">${esc(o.breakdown)}${times ? `<br>${times}` : ""}</div>
       ${badges ? `<div class="badges">${badges}</div>` : ""}
     `;
-    card.addEventListener("click", () => selectOption(o, true));
+    card.addEventListener("click", () => {
+      userPicked = true;
+      selectOption(o, true);
+    });
     resultsList.appendChild(card);
   });
   for (const err of errors) {

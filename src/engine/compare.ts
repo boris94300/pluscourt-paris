@@ -24,9 +24,17 @@ const VELIB_DOCK = 60;
 const BIKE_UNLOCK = 90;
 const BIKE_LOCK = 120;
 const MIN_STATION_BIKES = 2;
-const VELIB_MECH_SPEED = 15;
-const VELIB_EBIKE_SPEED = 20;
-const PERSONAL_BIKE_SPEED = 17;
+const VELIB_MECH_SPEED = 19;
+const VELIB_EBIKE_SPEED = 22;
+const PERSONAL_BIKE_SPEED = 19;
+const WALK_SPEED = 6;
+
+/** Durée = distance / vitesse (km/h), en secondes.
+ *  Plus prévisible que le temps Valhalla (qui ajoute des pénalités par
+ *  virage/feu/relief) : « seule la vitesse compte ». */
+function dur(distanceM: number, speedKmh: number): number {
+  return distanceM / (speedKmh / 3.6);
+}
 
 function fmtMin(sec: number): string {
   return `${Math.max(1, Math.round(sec / 60))}’`;
@@ -57,14 +65,15 @@ function lineLabel(s: NavitiaSection): { chip: string; color: string; name: stri
 async function walkOption(from: LatLon, to: LatLon): Promise<TripOption | null> {
   const r = await route(from, to, "pedestrian");
   if (r.distance > 8000) return null;
+  const duration = dur(r.distance, WALK_SPEED);
   return {
     id: "walk",
     mode: "walk",
     title: "À pied",
-    duration: r.duration,
-    breakdown: `Marche ${fmtMin(r.duration)}`,
+    duration,
+    breakdown: `Marche ${fmtMin(duration)}`,
     badges: [],
-    steps: [{ icon: "🚶", label: `Marcher ${Math.round(r.distance)} m`, duration: r.duration }],
+    steps: [{ icon: "🚶", label: `Marcher ${Math.round(r.distance)} m`, duration }],
     segments: [{ coords: r.coords, color: COLORS.walk, dash: true }],
   };
 }
@@ -87,7 +96,7 @@ async function personalBikeOption(from: LatLon, to: LatLon): Promise<TripOption 
   const walkBack = park ? await route(bikeDest, to, "pedestrian").catch(() => null) : null;
   const parkDist = park ? dist(bikeDest, to) : null;
   // Sans parking trouvé le vélo arrive directement à destination : pas de marche finale.
-  const walkTime = park ? (walkBack?.duration ?? (parkDist ?? 0) / 1.33) : 0;
+  const walkTime = park ? (walkBack ? dur(walkBack.distance, WALK_SPEED) : (parkDist ?? 0) / 1.667) : 0;
 
   const parkingInfo = parkingFailed
     ? "Stationnement vélo indisponible"
@@ -99,10 +108,11 @@ async function personalBikeOption(from: LatLon, to: LatLon): Promise<TripOption 
           : `Arceaux à ${Math.round(parkDist ?? 0)} m`
       : "Pas de stationnement vélo référencé à moins de 350 m";
 
-  const duration = BIKE_UNLOCK + r.duration + BIKE_LOCK + walkTime;
+  const rideDur = dur(r.distance, PERSONAL_BIKE_SPEED);
+  const duration = BIKE_UNLOCK + rideDur + BIKE_LOCK + walkTime;
   const steps: Step[] = [
     { icon: "🔓", label: "Détacher le vélo", duration: BIKE_UNLOCK },
-    { icon: "🚲", label: `Pédaler ${(r.distance / 1000).toFixed(1)} km`, sub: r.ascent ? `Dénivelé +${r.ascent} m` : undefined, duration: r.duration },
+    { icon: "🚲", label: `Pédaler ${(r.distance / 1000).toFixed(1)} km`, sub: r.ascent ? `Dénivelé +${r.ascent} m` : undefined, duration: rideDur },
     { icon: "🔒", label: `Attacher le vélo — ${parkingInfo}`, duration: BIKE_LOCK },
   ];
   const segments: RouteSegment[] = [{ coords: r.coords, color: COLORS.bike }];
@@ -120,7 +130,7 @@ async function personalBikeOption(from: LatLon, to: LatLon): Promise<TripOption 
     mode: "bike",
     title: "Vélo perso",
     duration,
-    breakdown: `Cadenas ${fmtMin(BIKE_UNLOCK)} · Vélo ${fmtMin(r.duration)} · Attacher ${fmtMin(BIKE_LOCK + walkTime)}`,
+    breakdown: `Cadenas ${fmtMin(BIKE_UNLOCK)} · Vélo ${fmtMin(rideDur)} · Attacher ${fmtMin(BIKE_LOCK + walkTime)}`,
     badges: [
       { text: parkingInfo, kind: park != null && (parkDist ?? 999) < 200 ? "good" : "warn" },
       ...(r.ascent && r.ascent > 15 ? [{ text: `Dénivelé +${r.ascent} m`, kind: "info" as const }] : []),
@@ -157,7 +167,10 @@ async function velibOption(
     route(best.p, best.d, "bicycle", { cyclingSpeed: speed }),
     route(best.d, to, "pedestrian"),
   ]);
-  const duration = walkIn.duration + VELIB_UNDOCK + ride.duration + VELIB_DOCK + walkOut.duration;
+  const walkInDur = dur(walkIn.distance, WALK_SPEED);
+  const rideDur = dur(ride.distance, speed);
+  const walkOutDur = dur(walkOut.distance, WALK_SPEED);
+  const duration = walkInDur + VELIB_UNDOCK + rideDur + VELIB_DOCK + walkOutDur;
   const mech = best.p.mechanical;
   const e = best.p.ebike;
   const isE = type === "ebike";
@@ -166,7 +179,7 @@ async function velibOption(
     mode: isE ? "velib_ebike" : "velib_mech",
     title: isE ? "Vélib' électrique" : "Vélib' mécanique",
     duration,
-    breakdown: `Marche ${fmtMin(walkIn.duration)} · Vélib' ${fmtMin(ride.duration)} · Marche ${fmtMin(walkOut.duration)}`,
+    breakdown: `Marche ${fmtMin(walkInDur)} · Vélib' ${fmtMin(rideDur)} · Marche ${fmtMin(walkOutDur)}`,
     badges: [
       {
         text: `${best.p.name} : ${mech} verts · ${e} bleus`,
@@ -176,10 +189,10 @@ async function velibOption(
       ...(ride.ascent && ride.ascent > 15 ? [{ text: `Dénivelé +${ride.ascent} m`, kind: "info" as const }] : []),
     ],
     steps: [
-      { icon: "🚶", label: `Marcher jusqu'à la station ${best.p.name}`, sub: `${mech} verts · ${e} bleus dispo`, duration: walkIn.duration },
-      { icon: isE ? "⚡" : "🚲", label: `Vélib' ${isE ? "électrique" : "mécanique"} — ${(ride.distance / 1000).toFixed(1)} km`, sub: ride.ascent ? `Dénivelé +${ride.ascent} m` : undefined, duration: ride.duration + VELIB_UNDOCK },
+      { icon: "🚶", label: `Marcher jusqu'à la station ${best.p.name}`, sub: `${mech} verts · ${e} bleus dispo`, duration: walkInDur },
+      { icon: isE ? "⚡" : "🚲", label: `Vélib' ${isE ? "électrique" : "mécanique"} — ${(ride.distance / 1000).toFixed(1)} km`, sub: ride.ascent ? `Dénivelé +${ride.ascent} m` : undefined, duration: rideDur + VELIB_UNDOCK },
       { icon: "📍", label: `Reposer à ${best.d.name}`, sub: `${best.d.docks} bornettes libres`, duration: VELIB_DOCK },
-      { icon: "🚶", label: `Marcher jusqu'à l'arrivée`, duration: walkOut.duration },
+      { icon: "🚶", label: `Marcher jusqu'à l'arrivée`, duration: walkOutDur },
     ],
     segments: [
       { coords: walkIn.coords, color: COLORS.walk, dash: true },
@@ -343,7 +356,9 @@ async function velibToStation(
     route(from, p, "pedestrian"),
     route(p, d, "bicycle", { cyclingSpeed: VELIB_EBIKE_SPEED }),
   ]);
-  const duration = walkIn.duration + VELIB_UNDOCK + ride.duration + VELIB_DOCK;
+  const walkInDur = dur(walkIn.distance, WALK_SPEED);
+  const rideDur = dur(ride.distance, VELIB_EBIKE_SPEED);
+  const duration = walkInDur + VELIB_UNDOCK + rideDur + VELIB_DOCK;
   return {
     stations: { p, d },
     duration,
@@ -352,8 +367,8 @@ async function velibToStation(
       { coords: ride.coords, color: COLORS.velibEbike },
     ],
     steps: [
-      { icon: "🚶", label: `Marcher jusqu'à ${p.name}`, duration: walkIn.duration },
-      { icon: "🚲", label: `Vélib' jusqu'à ${d.name}`, sub: `${d.docks} bornettes libres`, duration: ride.duration + VELIB_UNDOCK + VELIB_DOCK },
+      { icon: "🚶", label: `Marcher jusqu'à ${p.name}`, duration: walkInDur },
+      { icon: "🚲", label: `Vélib' jusqu'à ${d.name}`, sub: `${d.docks} bornettes libres`, duration: rideDur + VELIB_UNDOCK + VELIB_DOCK },
     ],
   };
 }
@@ -373,7 +388,10 @@ async function velibFromStation(
     route(p, d, "bicycle", { cyclingSpeed: VELIB_EBIKE_SPEED }),
     route(d, to, "pedestrian"),
   ]);
-  const duration = walkIn.duration + VELIB_UNDOCK + ride.duration + VELIB_DOCK + walkOut.duration;
+  const walkInDur = dur(walkIn.distance, WALK_SPEED);
+  const rideDur = dur(ride.distance, VELIB_EBIKE_SPEED);
+  const walkOutDur = dur(walkOut.distance, WALK_SPEED);
+  const duration = walkInDur + VELIB_UNDOCK + rideDur + VELIB_DOCK + walkOutDur;
   return {
     duration,
     segments: [
@@ -382,9 +400,9 @@ async function velibFromStation(
       { coords: walkOut.coords, color: COLORS.walk, dash: true },
     ],
     steps: [
-      { icon: "🚶", label: `Marcher jusqu'à ${p.name}`, duration: walkIn.duration },
-      { icon: "🚲", label: `Vélib' depuis ${p.name}`, sub: `${p.mechanical} verts · ${p.ebike} bleus`, duration: ride.duration + VELIB_UNDOCK },
-      { icon: "📍", label: `Reposer à ${d.name} puis marcher`, duration: VELIB_DOCK + walkOut.duration },
+      { icon: "🚶", label: `Marcher jusqu'à ${p.name}`, duration: walkInDur },
+      { icon: "🚲", label: `Vélib' depuis ${p.name}`, sub: `${p.mechanical} verts · ${p.ebike} bleus`, duration: rideDur + VELIB_UNDOCK },
+      { icon: "📍", label: `Reposer à ${d.name} puis marcher`, duration: VELIB_DOCK + walkOutDur },
     ],
   };
 }
@@ -396,11 +414,17 @@ export interface CompareResult {
   errors: string[];
 }
 
-export async function compare(from: LatLon, to: LatLon): Promise<CompareResult> {
+export async function compare(
+  from: LatLon,
+  to: LatLon,
+  onPartial?: (options: TripOption[]) => void,
+): Promise<CompareResult> {
   const errors: string[] = [];
   const options: TripOption[] = [];
+  const emit = () =>
+    onPartial?.([...options].sort((a, b) => a.duration - b.duration));
 
-  const stationsP = getVelibStations().catch((e) => {
+  const stationsP = getVelibStations().catch(() => {
     errors.push("Vélib' indisponible");
     return [] as VelibStation[];
   });
@@ -410,7 +434,10 @@ export async function compare(from: LatLon, to: LatLon): Promise<CompareResult> 
   tasks.push(
     walkOption(from, to)
       .then((o) => {
-        if (o) options.push(o);
+        if (o) {
+          options.push(o);
+          emit();
+        }
       })
       .catch(() => {
         errors.push("Itinéraire piéton indisponible");
@@ -419,11 +446,33 @@ export async function compare(from: LatLon, to: LatLon): Promise<CompareResult> 
   tasks.push(
     personalBikeOption(from, to)
       .then((o) => {
-        if (o) options.push(o);
+        if (o) {
+          options.push(o);
+          emit();
+        }
       })
       .catch(() => {
         errors.push("Itinéraire vélo indisponible");
       }),
+  );
+
+  // Vélib' directs : n'attend pas les transports (plus rapide à afficher)
+  tasks.push(
+    stationsP.then(async (stations) => {
+      if (!stations.length || dist(from, to) <= 400) return;
+      const [mech, e] = await Promise.all([
+        velibOption(from, to, stations, "mechanical").catch(() => null),
+        velibOption(from, to, stations, "ebike").catch(() => null),
+      ]);
+      if (mech) {
+        options.push(mech);
+        emit();
+      }
+      if (e) {
+        options.push(e);
+        emit();
+      }
+    }),
   );
 
   const journeysP = getJourneys(from, to, { count: 6 }).catch(() => {
@@ -433,16 +482,6 @@ export async function compare(from: LatLon, to: LatLon): Promise<CompareResult> 
 
   tasks.push(
     Promise.all([stationsP, journeysP]).then(async ([stations, jr]) => {
-      // Vélib' directs (inutile pour un trajet très court)
-      if (stations.length && dist(from, to) > 400) {
-        const [mech, e] = await Promise.all([
-          velibOption(from, to, stations, "mechanical").catch(() => null),
-          velibOption(from, to, stations, "ebike").catch(() => null),
-        ]);
-        if (mech) options.push(mech);
-        if (e) options.push(e);
-      }
-
       let idx = 0;
       const parsed: ParsedJourney[] = [];
       for (const j of jr.journeys) {
@@ -460,7 +499,10 @@ export async function compare(from: LatLon, to: LatLon): Promise<CompareResult> 
         kept.push(p);
         if (kept.length >= 2) break;
       }
-      for (const p of kept) options.push(p.option);
+      for (const p of kept) {
+        options.push(p.option);
+        emit();
+      }
 
       // Combos Vélib' ↔ transports sur le meilleur itinéraire
       if (stations.length && kept.length) {
@@ -485,6 +527,7 @@ export async function compare(from: LatLon, to: LatLon): Promise<CompareResult> 
                 segments: [...best.option.segments.slice(0, -1), ...tail.segments],
                 departure: best.option.departure,
               });
+            emit();
             }
           }
         }

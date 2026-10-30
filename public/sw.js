@@ -1,4 +1,4 @@
-const CACHE = "pluscourt-v2";
+const CACHE = "pluscourt-v3";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest"];
 
 self.addEventListener("install", (e) => {

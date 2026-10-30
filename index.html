@@ -16,13 +16,16 @@
       <div class="field" id="field-from">
         <span class="dot dot-from"></span>
         <input id="input-from" type="text" placeholder="Départ" autocomplete="off" enterkeyhint="search" />
+        <button id="btn-pin-from" title="Choisir sur la carte" aria-label="Choisir le départ sur la carte">&#128205;</button>
         <button id="btn-gps" title="Ma position" aria-label="Ma position">&#8982;</button>
       </div>
       <button id="btn-swap" title="Inverser" aria-label="Inverser">&#8645;</button>
       <div class="field" id="field-to">
         <span class="dot dot-to"></span>
         <input id="input-to" type="text" placeholder="Arrivée" autocomplete="off" enterkeyhint="search" />
+        <button id="btn-pin-to" title="Choisir sur la carte" aria-label="Choisir l'arrivée sur la carte">&#128205;</button>
       </div>
+      <div id="pick-hint" class="hidden">Touche la carte pour choisir le point</div>
       <ul id="suggestions" class="hidden"></ul>
       <div id="weather-chip" class="hidden"></div>
     </header>
