@@ -63,11 +63,13 @@ export async function route(
   if (costing === "bicycle") {
     body.costing_options = {
       bicycle: {
-        bicycle_type: "Hybrid",
-        cycling_speed: opts.cyclingSpeed ?? 17,
-        use_roads: 0.6,
+        bicycle_type: "Road",
+        cycling_speed: opts.cyclingSpeed ?? 19,
+        // use_roads élevé = tracés directs sur la chaussée plutôt que des
+        // détours par les pistes cyclables (le reproche original sur Google Maps)
+        use_roads: 0.9,
         use_hills: 0.4,
-        avoid_bad_surfaces: 0.3,
+        avoid_bad_surfaces: 0.2,
       },
     };
   }

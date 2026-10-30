@@ -67,7 +67,14 @@ html, body {
 .dot-from { background: var(--accent); }
 .dot-to { background: #ff6b6b; }
 
-#btn-gps, #btn-swap {
+#pick-hint {
+  grid-column: 1 / -1;
+  font-size: 13px;
+  color: var(--accent);
+  padding: 2px 4px 0;
+}
+
+#btn-gps, #btn-swap, #btn-pin-from, #btn-pin-to {
   background: none;
   border: none;
   color: var(--muted);
