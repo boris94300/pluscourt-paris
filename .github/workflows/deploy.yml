@@ -1,8 +1,11 @@
 name: Deploy to GitHub Pages
 
-# Déploiement manuel : nécessite le secret repo VITE_PRIM_API_KEY
-# (Settings → Secrets and variables → Actions). Tant qu'il n'existe pas,
-# le site est déployé via la branche gh-pages (dist/ buildé en local).
+# Déploiement manuel. Prérequis AVANT de lancer ce workflow :
+# 1. Secret repo VITE_PRIM_API_KEY (Settings → Secrets and variables → Actions)
+# 2. Settings → Pages → Source = "GitHub Actions" (sinon deploy-pages échoue
+#    tant que Pages publie depuis la branche gh-pages)
+# Tant que ces réglages ne sont pas faits, le site est déployé via la
+# branche gh-pages (dist/ buildé en local puis poussé).
 on:
   workflow_dispatch:
 
