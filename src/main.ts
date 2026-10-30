@@ -9,6 +9,9 @@ import { getVelibStations } from "./api/velib";
 
 const PARIS: LatLon = { lat: 48.8566, lon: 2.3522 };
 
+const esc = (s: string): string =>
+  s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+
 /* ---------------- Carte 3D ---------------- */
 
 const map = new maplibregl.Map({
@@ -172,7 +175,12 @@ function renderSuggestions(places: Place[]) {
   }
   for (const p of places) {
     const li = document.createElement("li");
-    li.innerHTML = `<span>${p.name}</span><span class="kind">${p.kind}</span>`;
+    const name = document.createElement("span");
+    name.textContent = p.name;
+    const kind = document.createElement("span");
+    kind.className = "kind";
+    kind.textContent = p.kind;
+    li.append(name, kind);
     li.addEventListener("pointerdown", (e) => {
       e.preventDefault();
       pickPlace(p);
@@ -302,14 +310,14 @@ function renderResults(errors: string[] = []) {
     const card = document.createElement("div");
     card.className = `option-card${i === 0 ? " first" : ""}`;
     card.dataset.id = o.id;
-    const badges = o.badges.map((b) => `<span class="badge ${b.kind}">${b.text}</span>`).join("");
-    const times = o.departure ? `Départ ${o.departure} → ${o.arrival}` : "";
+    const badges = o.badges.map((b) => `<span class="badge ${esc(b.kind)}">${esc(b.text)}</span>`).join("");
+    const times = o.departure ? `Départ ${esc(o.departure)} → ${esc(o.arrival ?? "")}` : "";
     card.innerHTML = `
       <div class="option-head">
-        <span class="option-title">${MODE_ICONS[o.mode] ?? ""} ${o.title}</span>
+        <span class="option-title">${MODE_ICONS[o.mode] ?? ""} ${esc(o.title)}</span>
         <span class="option-time">${fmtDuration(o.duration)}</span>
       </div>
-      <div class="option-detail">${o.breakdown}${times ? `<br>${times}` : ""}</div>
+      <div class="option-detail">${esc(o.breakdown)}${times ? `<br>${times}` : ""}</div>
       ${badges ? `<div class="badges">${badges}</div>` : ""}
     `;
     card.addEventListener("click", () => selectOption(o, true));
@@ -333,16 +341,16 @@ function selectOption(o: TripOption, showDetail: boolean) {
 function renderDetail(o: TripOption) {
   detailContent.innerHTML = `
     <div class="option-head" style="margin-bottom:6px">
-      <span class="option-title">${MODE_ICONS[o.mode] ?? ""} ${o.title}</span>
+      <span class="option-title">${MODE_ICONS[o.mode] ?? ""} ${esc(o.title)}</span>
       <span class="option-time">${fmtDuration(o.duration)}</span>
     </div>
     ${o.steps
       .map(
         (s) => `
       <div class="step">
-        <span class="step-icon">${s.icon}</span>
-        <span class="step-main">${s.label}${s.sub ? `<div class="step-sub">${s.sub}</div>` : ""}</span>
-        <span class="step-time">${s.startsAt ? s.startsAt + " · " : ""}${fmtMin(s.duration)}</span>
+        <span class="step-icon">${esc(s.icon)}</span>
+        <span class="step-main">${esc(s.label)}${s.sub ? `<div class="step-sub">${esc(s.sub)}</div>` : ""}</span>
+        <span class="step-time">${s.startsAt ? esc(s.startsAt) + " · " : ""}${fmtMin(s.duration)}</span>
       </div>`,
       )
       .join("")}

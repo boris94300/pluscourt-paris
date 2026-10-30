@@ -33,13 +33,15 @@ out center tags;`;
     const lon = el.lon ?? el.center?.lon;
     if (lat == null || lon == null) continue;
     const t = el.tags ?? {};
+    // exclut ce qui n'est pas accessible au public (cour privée, parking d'entreprise…)
+    if (t.access === "private" || t.access === "no" || t.access === "customers") continue;
     const kind = t.bicycle_parking === "building" || t.building ? "parking" : "rack";
     out.push({
       lat,
       lon,
       capacity: parseInt(t.capacity) || 0,
       covered: t.covered === "yes",
-      secured: t.access === "private" || t.fee === "yes" || t.supervised === "yes",
+      secured: t.supervised === "yes" || t.surveillance === "yes" || t.fee === "yes" || kind === "parking",
       fee: t.fee === "yes",
       kind,
     });

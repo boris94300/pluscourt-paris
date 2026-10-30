@@ -8,7 +8,7 @@ import {
   dist,
   type VelibStation,
 } from "../api/velib";
-import { getBikeParking } from "../api/parking";
+import { getBikeParking, type BikeParking } from "../api/parking";
 
 const COLORS = {
   walk: "#5ac8fa",
@@ -70,44 +70,57 @@ async function walkOption(from: LatLon, to: LatLon): Promise<TripOption | null> 
 }
 
 async function personalBikeOption(from: LatLon, to: LatLon): Promise<TripOption | null> {
-  const r = await route(from, to, "bicycle", { cyclingSpeed: PERSONAL_BIKE_SPEED });
-  if (r.distance > 20000) return null;
-  let parkingInfo = "";
-  let parkDist: number | null = null;
+  if (dist(from, to) < 250) return null; // un vélo n'a pas de sens pour si peu
+
+  // Le parking se choisit d'abord : le vélo roule jusqu'à lui, puis on marche jusqu'à l'arrivée.
+  let park: BikeParking | null = null;
+  let parkingFailed = false;
   try {
-    const parks = await getBikeParking(to, 350);
-    if (parks.length) {
-      const best = parks[0]!;
-      parkDist = dist(to, best);
-      parkingInfo = best.secured
-        ? `Parking sécurisé à ${Math.round(parkDist)} m`
-        : best.covered
-          ? `Parking couvert à ${Math.round(parkDist)} m`
-          : `Arceaux à ${Math.round(parkDist)} m`;
-    } else {
-      parkingInfo = "Pas de stationnement vélo référencé à moins de 350 m";
-    }
+    park = (await getBikeParking(to, 350))[0] ?? null;
   } catch {
-    /* silencieux */
+    parkingFailed = true;
   }
-  const walkToParking = parkDist != null ? (parkDist / 1.33) : 90;
-  const duration = BIKE_UNLOCK + r.duration + BIKE_LOCK + walkToParking;
+  const bikeDest: LatLon = park ? { lat: park.lat, lon: park.lon } : to;
+  const r = await route(from, bikeDest, "bicycle", { cyclingSpeed: PERSONAL_BIKE_SPEED });
+  if (r.distance > 20000) return null;
+
+  const walkBack = park ? await route(bikeDest, to, "pedestrian").catch(() => null) : null;
+  const parkDist = park ? dist(bikeDest, to) : null;
+  const walkTime = walkBack?.duration ?? (parkDist != null ? parkDist / 1.33 : 90);
+
+  const parkingInfo = parkingFailed
+    ? "Stationnement vélo indisponible"
+    : park
+      ? park.secured
+        ? `Parking sécurisé à ${Math.round(parkDist ?? 0)} m`
+        : park.covered
+          ? `Parking couvert à ${Math.round(parkDist ?? 0)} m`
+          : `Arceaux à ${Math.round(parkDist ?? 0)} m`
+      : "Pas de stationnement vélo référencé à moins de 350 m";
+
+  const duration = BIKE_UNLOCK + r.duration + BIKE_LOCK + walkTime;
+  const steps: Step[] = [
+    { icon: "🔓", label: "Détacher le vélo", duration: BIKE_UNLOCK },
+    { icon: "🚲", label: `Pédaler ${(r.distance / 1000).toFixed(1)} km`, sub: r.ascent ? `Dénivelé +${r.ascent} m` : undefined, duration: r.duration },
+    { icon: "🔒", label: `Attacher le vélo — ${parkingInfo}`, duration: BIKE_LOCK },
+  ];
+  const segments: RouteSegment[] = [{ coords: r.coords, color: COLORS.bike }];
+  if (park) {
+    steps.push({ icon: "🚶", label: "Marcher jusqu'à l'arrivée", duration: walkTime });
+    if (walkBack?.coords.length) segments.push({ coords: walkBack.coords, color: COLORS.walk, dash: true });
+  }
   return {
     id: "bike",
     mode: "bike",
     title: "Vélo perso",
     duration,
-    breakdown: `Cadenas ${fmtMin(BIKE_UNLOCK)} · Vélo ${fmtMin(r.duration)} · Attacher ${fmtMin(BIKE_LOCK + walkToParking)}`,
+    breakdown: `Cadenas ${fmtMin(BIKE_UNLOCK)} · Vélo ${fmtMin(r.duration)} · Attacher ${fmtMin(BIKE_LOCK + walkTime)}`,
     badges: [
-      { text: parkingInfo, kind: parkDist != null && parkDist < 200 ? "good" : "warn" },
+      { text: parkingInfo, kind: park != null && (parkDist ?? 999) < 200 ? "good" : "warn" },
       ...(r.ascent && r.ascent > 15 ? [{ text: `Dénivelé +${r.ascent} m`, kind: "info" as const }] : []),
     ],
-    steps: [
-      { icon: "🔓", label: "Détacher le vélo", duration: BIKE_UNLOCK },
-      { icon: "🚲", label: `Pédaler ${(r.distance / 1000).toFixed(1)} km`, sub: r.ascent ? `Dénivelé +${r.ascent} m` : undefined, duration: r.duration },
-      { icon: "🔒", label: `Attacher le vélo${parkDist != null ? ` — ${parkingInfo}` : ""}`, duration: BIKE_LOCK + walkToParking },
-    ],
-    segments: [{ coords: r.coords, color: COLORS.bike }],
+    steps,
+    segments,
     ascent: r.ascent,
   };
 }
@@ -349,18 +362,21 @@ async function velibFromStation(
   if (!pickups.length || !dropoffs.length) return null;
   const p = pickups[0]!;
   const d = dropoffs[0]!;
-  const [ride, walkOut] = await Promise.all([
+  const [walkIn, ride, walkOut] = await Promise.all([
+    route(stopCoord, p, "pedestrian"),
     route(p, d, "bicycle", { cyclingSpeed: VELIB_EBIKE_SPEED }),
     route(d, to, "pedestrian"),
   ]);
-  const duration = VELIB_UNDOCK + ride.duration + VELIB_DOCK + walkOut.duration;
+  const duration = walkIn.duration + VELIB_UNDOCK + ride.duration + VELIB_DOCK + walkOut.duration;
   return {
     duration,
     segments: [
+      { coords: walkIn.coords, color: COLORS.walk, dash: true },
       { coords: ride.coords, color: COLORS.velibEbike },
       { coords: walkOut.coords, color: COLORS.walk, dash: true },
     ],
     steps: [
+      { icon: "🚶", label: `Marcher jusqu'à ${p.name}`, duration: walkIn.duration },
       { icon: "🚲", label: `Vélib' depuis ${p.name}`, sub: `${p.mechanical} verts · ${p.ebike} bleus`, duration: ride.duration + VELIB_UNDOCK },
       { icon: "📍", label: `Reposer à ${d.name} puis marcher`, duration: VELIB_DOCK + walkOut.duration },
     ],
@@ -411,8 +427,8 @@ export async function compare(from: LatLon, to: LatLon): Promise<CompareResult> 
 
   tasks.push(
     Promise.all([stationsP, journeysP]).then(async ([stations, jr]) => {
-      // Vélib' directs
-      if (stations.length) {
+      // Vélib' directs (inutile pour un trajet très court)
+      if (stations.length && dist(from, to) > 400) {
         const [mech, e] = await Promise.all([
           velibOption(from, to, stations, "mechanical").catch(() => null),
           velibOption(from, to, stations, "ebike").catch(() => null),
@@ -473,10 +489,13 @@ export async function compare(from: LatLon, to: LatLon): Promise<CompareResult> 
   await Promise.all(tasks);
 
   options.sort((a, b) => a.duration - b.duration);
-  // Déduplique les options quasi identiques (même mode, durée ±30 s)
+  // Déduplique seulement les trajets vraiment identiques (même mode + même signature de trajet).
+  // Deux itinéraires transports distincts (lignes différentes) à durée proche sont conservés.
   const dedup: TripOption[] = [];
   for (const o of options) {
-    const dup = dedup.find((d) => d.mode === o.mode && Math.abs(d.duration - o.duration) < 30);
+    const dup = dedup.find(
+      (d) => d.mode === o.mode && d.breakdown === o.breakdown && Math.abs(d.duration - o.duration) < 30,
+    );
     if (!dup) dedup.push(o);
   }
   return { options: dedup.slice(0, 6), errors };
